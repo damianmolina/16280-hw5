@@ -148,7 +148,7 @@ class Point2PlaneICP:
             - e.g. tangent = p[i + 1] - p[i - 1] = [4, 5] - [2, 3] = [2, 2]
             - step 3: flip this tangent to get the normal. i.e. normal = [-tangent[1], tangent[0]] = [-2, 2]
         - step 4: find the normal = tangent/ norm(tangent)
-        - step 5: the sensor_origin is used to align norma in same directions
+        - step 5: the sensor_origin is used to align normals in the same directions
         - step 6: append to the list normals[]
         - step 7: normals[0] = normals[1], and normals[n] = normals[n-1]
         - visualize the normals using the function plot_normals()
