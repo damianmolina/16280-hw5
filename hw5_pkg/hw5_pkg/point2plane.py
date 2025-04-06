@@ -100,7 +100,7 @@ class Point2PlaneICP:
         self.skip_pose = skip_pose
         self.accumulated_points = []
         self.visualize_normal = False  # set this to true to visualize the normals
-        self.normal_simple = False  # use this to switch between a simple and more robust normal estimation
+        self.normal_simple = True  # use this to switch between a simple and more robust normal estimation
 
     def ranges_to_xy(self, ranges, angles):
         """
