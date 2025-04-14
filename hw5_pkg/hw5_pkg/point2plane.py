@@ -147,7 +147,7 @@ class Point2PlaneICP:
             - then rotate 90 deg to get the normal
             - e.g. tangent = p[i + 1] - p[i - 1] = [4, 5] - [2, 3] = [2, 2]
             - step 3: flip this tangent to get the normal. i.e. normal = [-tangent[1], tangent[0]] = [-2, 2]
-        - step 4: find the normal = tangent/ norm(tangent)
+        - step 4: find the normal = normal/np.linalg.norm(normal)
         - step 5: the sensor_origin is used to align normals in the same directions
         - step 6: append to the list normals[]
         - step 7: normals[0] = normals[1], and normals[n] = normals[n-1]
@@ -156,16 +156,16 @@ class Point2PlaneICP:
          """
         normals = []
         for i in range(1, len(points) - 1):
-            p1, p2 = ...
-            tangent = ...
-            normal = ...
-            normal = normal /...
+            p1, p2 = points[i - 1], points[i + 1]
+            tangent = p2 - p1
+            normal = [-tangent[1], tangent[0]]
+            normal = normal/np.linalg.norm(normal)
             to_sensor = sensor_origin - points[i]
             if np.dot(normal, to_sensor) < 0:
                 normal = -normal
             normals.append(normal)
-        normals.insert(...)
-        normals.append(...)
+        normals.insert(0, normals[1]) 
+        normals.append(normals[-1]) 
         return np.array(normals)
 
     def compute_normals_pca(self, points, tree, sensor_origin, k=10):
@@ -222,12 +222,12 @@ class Point2PlaneICP:
                 # when working with vectors, use dot product where applicable
                 # Append A and b to the list
 
-                delta = ...
+                delta = p - q
                 px, py = p
                 nx, ny = n
 
-                A.append(...)  # append [n · [-py, px], nx, ny]
-                b.append(...)  # append b = -n · (p - q)
+                A.append([np.dot(n, [-py, px]), nx, ny])  # append [n · [-py, px], nx, ny]
+                b.append(np.dot(-n, delta))  # append b = -n · (p - q)
 
             A = np.array(A)
             b = np.array(b)
@@ -240,12 +240,13 @@ class Point2PlaneICP:
             #    alternatively form a homogeneous transformation matrix and transform the source
             # return source point cloud
 
-            x, _, _, _ = ...  # use np.np.linalg.lstsq() to solve SVD
-            angle = ...
-            tx = ...
-            ty = ...
-            R = ...  # rotation matrix
-            src = ...  # update src using the R and t or the homogeneous matrix
+            x, _, _, _ = np.linalg.lstsq(A, b) # use np.np.linalg.lstsq() to solve SVD
+            angle = x[0]
+            tx = x[1]
+            ty = x[2]
+            R = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]) # rotation matrix
+            # update src using the R and t or the homogeneous matrix
+            src = (R @ src.T).T + np.array([tx, ty])
             # ----------------------- TBD-END -------------------
         return src
 
@@ -325,7 +326,7 @@ class Point2PlaneICP:
 
 
 if __name__ == "__main__":
-    path_ = "/path/to/your/ws/" # change this to match your directory. note: '/' expected at the end
+    path_ = "/Users/damianmolina/Downloads/16280-hw5/hw5_pkg/data/" # change this to match your directory. note: '/' expected at the end
     parser = DataParser(odom_path=path_ + "odom_sync.txt", scan_path=path_ + "scan_sync.txt")
     parser.parse_odom()
     parser.parse_scan()
