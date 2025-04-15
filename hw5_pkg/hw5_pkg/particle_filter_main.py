@@ -107,7 +107,7 @@ class ParticleFilterNode(Node):
         super().__init__('particle_filter_node')
 
 # --------------- TBD ---------------
-        self.num_particles = ... # try a value between 30 -120
+        self.num_particles = 60 # try a value between 30 -120
 # --------------- TBD -END  ---------------
         self.particles = []
         self.map = None
@@ -127,21 +127,22 @@ class ParticleFilterNode(Node):
         # write the appropriate QoS profile for the publishing MAP. this requires additional durability policy
         # refer to the lecture for more details
         map_qos = QoSProfile(
-            reliability=...,
-            history=...,
-            durability=...,
+            reliability= QoSReliabilityPolicy.BEST_EFFORT,
+            history= QoSHistoryPolicy.KEEP_LAST, 
+            durability= QoSDurabilityPolicy.TRANSIENT_LOCAL,
             depth=1
         )
         sensor_qos = QoSProfile(
-            reliability=...,
-            history=...,
+            reliability= QoSReliabilityPolicy.BEST_EFFORT,
+            history= QoSHistoryPolicy.KEEP_LAST,
             depth=10
         )
         odom_qos = QoSProfile(
-            reliability=...,
-            history=...,
+            reliability= QoSReliabilityPolicy.BEST_EFFORT,
+            history= QoSHistoryPolicy.KEEP_LAST,
             depth=10
         )
+
         # ------------ TBD - END -------------------
 
         self.create_subscription(OccupancyGrid, '/map', self.map_callback, map_qos)
@@ -197,7 +198,7 @@ class ParticleFilterNode(Node):
 
         valid_cells = [(ox + (x + 0.5) * res, oy + (y + 0.5) * res)
                        for y in range(height) for x in range(width)
-                       if map_data[x, height - y - 1] >= ...]   # write the pixel value for "free" grid. refer to lecture notes
+                       if map_data[x, height - y - 1] >= 255]   # write the pixel value for "free" grid. refer to lecture notes
         # -------------------- TBD -END ---------------------
 
         for _ in range(self.num_particles):
@@ -238,28 +239,34 @@ class ParticleFilterNode(Node):
         #---------------------- TBD ----------------------------
         # extract x1, y1, theta 1 from the last odom message
 
-        x1, y1 = ...
-        theta1 = ...
+        x1, y1 = self.last_odom.pose.pose.position.x, self.last_odom.pose.pose.position.y
+        theta1 = self.get_yaw(self.last_odom.pose.pose.orientation)
+        
 
         # extract x2, y2, theta 2 from the recent odom message
-        x2, y2 = ...
-        theta2 = ...
+        x2, y2 = msg.pose.pose.position.x, msg.pose.pose.position.y
+        theta2 = self.get_yaw(msg.pose.pose.orientation)
+
 
         # Using homogeneous transformation matrices for relative motion
         T_prev = np.array([
-            ...
+            [math.cos(theta1), -math.sin(theta1), x1],
+            [math.sin(theta1), math.cos(theta1), y1],
+            [0, 0, 1]
         ])
         T_curr = np.array([
-            ...
+            [math.cos(theta2), -math.sin(theta2), x2],
+            [math.sin(theta2), math.cos(theta2), y2],
+            [0, 0, 1]
         ])
 
         # T_rel = inv(T_prev) @ T_curr
-        T_rel = ...
+        T_rel = np.linalg.inv(T_prev) @ T_curr
 
         # compute dx, dy, dtheta, and pass it on to self.motion_update() to get the priors
-        dx = T_rel[...]
-        dy = T_rel[...]
-        dtheta = math.atan2(...)
+        dx = T_rel[0, 2]
+        dy = T_rel[1, 2]
+        dtheta = math.atan2(T_rel[1, 0], T_rel[0, 0])
 
         # ---------------------- TBD ----------------------------
 
@@ -283,22 +290,25 @@ class ParticleFilterNode(Node):
         dx, dy, dtheta = u
         for p in self.particles:
             ndx = dx + random.gauss(0, 0.01)  # add random noise
-            ndy = ...
-            ndtheta = ...
+            ndy = dy + random.gauss(0, 0.01)
+            ndtheta = dtheta + random.gauss(0, 0.01)
 
             T_particle = np.array([
-                ...
+                [math.cos(p.theta), -math.sin(p.theta), p.x],
+                [math.sin(p.theta), math.cos(p.theta), p.y],
+                [0, 0, 1]
             ])
             T_delta = np.array([
-                ...
+                [math.cos(ndtheta), -math.sin(ndtheta), ndx],
+                [math.sin(ndtheta), math.cos(ndtheta), ndy],
+                [0, 0, 1]
             ])
             # T_new = T @ T_delta
+            T_new = T_particle @ T_delta
 
-            T_new = ...
-
-            p.x = T_new[...]
-            p.y = T_new[...]
-            p.theta = math.atan2(...)
+            p.x = T_new[0, 2]
+            p.y = T_new[1, 2]
+            p.theta = math.atan2(T_new[1, 0], T_new[0, 0])
         #------------------------- TBD -END --------------------
 
     def scan_callback(self, msg: LaserScan):
@@ -349,21 +359,22 @@ class ParticleFilterNode(Node):
         w = 1.0
         angle = scan_msg.angle_min # this is the no. of lidar beams. in total around 220. Set tit between
                                    # 1 and 10. 1 = consider all beams
+
         #------------------------ TBD --------------------------
         for r in scan_msg.ranges[::1]:
             if scan_msg.range_min < r < scan_msg.range_max:
-                x = ...
-                y = ...
-                mx = int() # it is in pixel unit so divide by resolution and should be int type
-                my = int()
+                x = p.x
+                y = p.y
+                mx = int(x/self.map_info.resolution) # it is in pixel unit so divide by resolution and should be int type
+                my = int(y/self.map_info.resolution)
                 # check if it falls within the map or not
                 if 0 <= mx < self.distance_map.shape[1] and 0 <= my < self.distance_map.shape[0]:
-                    d = ...
-                    likelihood = ....
+                    d = self.compute_distance_map
+                    likelihood = np.exp(-d**2 / (2 * (0.25**2)))
                 else:
                     # if not some other value. try values between 0.5 and 1
-                    likelihood = ...# similar expression to 2.d but d is fixed to a number
-                w *= max(likelihood, ...)  # just so that the weights are not too small and collapse
+                    likelihood = np.exp(-0.75**2 / (2 * (0.25**2))) # similar expression to 2.d but d is fixed to a number
+                w *= max(likelihood, 0.00001)  # just so that the weights are not too small and collapse
             angle += scan_msg.angle_increment
         # ------------------------ TBD-END --------------------------
         return w
@@ -403,8 +414,8 @@ class ParticleFilterNode(Node):
         """
 
         #------------------------- TBD ------------------------------
-        weights = np.array(...)
-        weights /= ...
+        weights = np.array([p.weight for p in self.particles])
+        weights /= weights.sum() 
         N = self.num_particles
         positions = (np.arange(N) + random.random()) / N
         cumulative_sum = np.cumsum(weights)
@@ -416,7 +427,7 @@ class ParticleFilterNode(Node):
                 i += 1
             else:
                 j += 1
-        self.particles = [...] # new particles
+        self.particles = [self.particles[index] for index in indexes] # new particles
 
 
         #------------------------- TBD-END ------------------------------
@@ -448,13 +459,13 @@ class ParticleFilterNode(Node):
         """
 
         #----------------------- TBD -----------------------
-        weights = np.array(...) # use self.particles
-        weights /= ...
-        x = sum(...)
-        y = sum(...)
-        sin_sum = sum(...)
-        cos_sum = sum(...)
-        theta = math.atan2(...)
+        weights = np.array([p.weight for p in self.particles]) # use self.particles
+        weights /= weights.sum()
+        x = sum(weights[i] * p.x for i, p in enumerate(self.particles))
+        y = sum(weights[i] * p.y for i, p in enumerate(self.particles))
+        sin_sum = sum(weights[i] * math.sin(p.theta) for i, p in enumerate(self.particles))
+        cos_sum = sum(weights[i] * math.cos(p.theta) for i, p in enumerate(self.particles))
+        theta = math.atan2(sin_sum, cos_sum)
         return x, y, theta
 
         # ----------------------- TBD-END -----------------------
@@ -492,14 +503,14 @@ class ParticleFilterNode(Node):
         otheta = self.get_yaw(self.last_odom.pose.pose.orientation)
         
         # for the homogeneous matrix using the theta or otheta angle
-        T_map_base = np.array([[..., ..., ...],  # x or ox?
-                               [..., ..., ...],   # y or oy?
+        T_map_base = np.array([[math.cos(theta), -math.sin(theta), x],  # x or ox?
+                               [math.sin(theta), math.cos(theta), y],   # y or oy?
                                [0, 0, 1]])
-        T_odom_base = np.array([[..., ..., ...], # x or ox?
-                                [..., ...., ...],  # y or oy?
-                                [0, 0, 1]])
+        T_odom_base = np.array([[math.cos(otheta), -math.sin(otheta), ox],  # x or ox?
+                               [math.sin(otheta), math.cos(otheta), oy],   # y or oy?
+                               [0, 0, 1]])
         # T_map_odom =T_map_base @ T_base_odom or T_map_odom =T_map_base @ inverse(T_odom_base)
-        self.T_map_odom = ...
+        self.T_map_odom = T_map_base @ np.linalg.inv(T_odom_base)
         
         self.map_to_odom_set = True
         # ----------------------- TBD-END -----------------------
@@ -514,9 +525,9 @@ class ParticleFilterNode(Node):
         theta = self.get_yaw(msg.pose.pose.orientation)
         # adding random noise to the given pose
         # ------------------ TBD --------------------
-        self.particles = [Particle(random.gauss(x, ...),  # try same value on all (0.1 to 0.3)
-                                   random.gauss(y, ...),
-                                   random.gauss(theta, ...),
+        self.particles = [Particle(random.gauss(x, 0.2),  # try same value on all (0.1 to 0.3)
+                                   random.gauss(y, 0.2),
+                                   random.gauss(theta, 0.2),
                                    1.0 / self.num_particles)
                           for _ in range(self.num_particles)]
         # ------------------ TBD-END --------------------
