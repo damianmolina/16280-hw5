@@ -42,15 +42,15 @@ class PauseAndCapture(Node):
         # refer to the lecture for more details
 
         map_qos = QoSProfile(
-            reliability=...,
-            history=...,
-            durability=...,
+            reliability= QoSReliabilityPolicy.BEST_EFFORT,
+            history= QoSHistoryPolicy.KEEP_LAST,
+            durability= QoSDurabilityPolicy.TRANSIENT_LOCAL,
             depth=1
         )
 
         self.map_pub = self.create_publisher(OccupancyGrid, '/map', map_qos)
 
-        qos_profile = QoSProfile(depth=10, reliability=...)
+        qos_profile = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.subscription = self.create_subscription(
             LaserScan,
             '/scan',
@@ -75,11 +75,11 @@ class PauseAndCapture(Node):
         self.height = ...  # measure the arena length and convert the metric value to pixel resolution, refer to the use class
         self.origin_x = -...  # initialize to the half of the arena width/2 metric value. Should have negative sign
         self.origin_y = -...  # initialize to the half of the arena height/2 metric value. Should have negative sign
-        self.l0 = ...  # initial probability of all cells will be 0.5. convert this to lof odds value
-        self.lz_occ = ...  # use higher positive values [0, 1] for occupied cell
-        self.lz_free = -...  # use lower negative values [0, 1] for empty cells. Should have negative sign
-        self.log_odds_min = -...  # calculate log odds lower bounds for probability = 0.1. Should have negative sign
-        self.log_odds_max = ...  # calculate log odds upper bounds for probability = 0.9
+        self.l0 = 0  # initial probability of all cells will be 0.5. convert this to lof odds value
+        self.lz_occ = np.log(0.6/0.4) # use higher positive values [0, 1] for occupied cell
+        self.lz_free = -np.log(0.3/0.7) # use lower negative values [0, 1] for empty cells. Should have negative sign
+        self.log_odds_min = -np.log(0.1/0.9) # calculate log odds lower bounds for probability = 0.1. Should have negative sign
+        self.log_odds_max = np.log(0.9/0.1)  # calculate log odds upper bounds for probability = 0.9
         # ----------------------- TBD-END -------------------
 
         self.log_odds_map = np.zeros((self.height, self.width), dtype=np.float32)
@@ -155,16 +155,16 @@ class PauseAndCapture(Node):
         """
         normals = []
         for i in range(1, len(points) - 1):
-            p1, p2 = ...
-            tangent = ...
-            normal = ...
-            normal = ...
-            to_sensor = ...
+            p1, p2 = points[i - 1], points[i + 1]
+            tangent = p2 - p1
+            normal = [-tangent[1], tangent[0]]
+            normal = normal/np.linalg.norm(normal)
+            to_sensor = sensor_origin - points[i]
             if np.dot(normal, to_sensor) < 0:
-                normal = -...
-            normals.append(...)
-        normals.insert(...)
-        normals.append(...)
+                normal = -normal
+            normals.append(normal)
+        normals.insert(0, normals[1]) 
+        normals.append(normals[-1]) 
         return np.array(normals)
 
         # --------------- TBD END ---------------
